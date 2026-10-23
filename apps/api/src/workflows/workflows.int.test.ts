@@ -102,9 +102,15 @@ describe("workflow outer loop", () => {
     const w = await service.create("Analyse", 3);
     await service.drain();
     expect(await getWorkflow(db, w.id)).toMatchObject({ state: "ANALYSING", attempt: 1 });
+    const firstRunId = (await getWorkflow(db, w.id)).runId;
     await service.drain();
-    expect(await getWorkflow(db, w.id)).toMatchObject({ state: "AWAITING_REVIEW", attempt: 2 });
-    expect((await workflowDetail(db, w.id)).events.filter((e) => e.to === "ANALYSING")).toHaveLength(2);
+    const retried = await getWorkflow(db, w.id);
+    expect(retried).toMatchObject({ state: "AWAITING_REVIEW", attempt: 2 });
+    expect(retried.runId).not.toBe(firstRunId);
+    const attempts = (await workflowDetail(db, w.id)).events.filter((e) => e.to === "ANALYSING");
+    const runIds = attempts.map((event) => event.runId);
+    expect(runIds).toHaveLength(2);
+    expect(new Set(runIds).size).toBe(2);
   });
   it("fails after exactly the allowed attempts", async () => {
     const service = await setup(new ScriptedAgentRunner([{ fail: "Offline" }]));
@@ -127,7 +133,9 @@ describe("workflow outer loop", () => {
     const w = await interrupted();
     const service = await setup();
     await service.drain();
-    expect(await getWorkflow(db, w.id)).toMatchObject({ state: "AWAITING_REVIEW", attempt: 2 });
+    const resumed = await getWorkflow(db, w.id);
+    expect(resumed).toMatchObject({ state: "AWAITING_REVIEW", attempt: 2 });
+    expect(resumed.runId).not.toBe(w.runId);
   });
   it("workshop session-02: recovers committed proposals without another invocation", async () => {
     const w = await interrupted();

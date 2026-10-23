@@ -33,7 +33,20 @@ export class WorkflowService {
     return workflow;
   }
   async initialize() {
-    return;
+    for (const workflow of await pendingWorkflows(this.db)) {
+      this.eligible.add(workflow.id);
+      if (workflow.state === "PROPOSAL_READY") {
+        await requestWorkflowReview(this.db, workflow.id, workflow.version);
+      } else if (workflow.state === "ANALYSING" && workflow.attempt >= workflow.maxAttempts) {
+        const run = workflow.runId ? await getRun(this.db, workflow.runId) : undefined;
+        await finishWorkflow(
+          this.db,
+          workflow.id,
+          workflow.version,
+          run?.error ?? "Invocation stopped or attempt budget exhausted",
+        );
+      }
+    }
   }
   start() {
     const tick = async () => {

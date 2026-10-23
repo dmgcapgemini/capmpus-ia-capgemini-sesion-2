@@ -227,10 +227,13 @@ export async function workflowResultStore(db: LoomDatabase, workflowId: string) 
         const row = await locked(tx, db, workflowId);
         if (row.submission_key !== binding.submission_key || row.run_id !== runId)
           throw new WorkflowError(409, "Submission belongs to a stale attempt");
-        if (row.state !== "ANALYSING") {
-          const existing = row.result_id === null ? null : await getAnalysisResult(tx, runId);
-          if (existing && Number(row.result_id) === existing.id && isDeepStrictEqual(existing.result, result))
+        const existing = await getAnalysisResult(tx, runId);
+        if (existing) {
+          if (Number(row.result_id) === existing.id && isDeepStrictEqual(existing.result, result))
             return { id: existing.id };
+          throw new WorkflowError(409, "Analysis result already exists with different content");
+        }
+        if (row.state !== "ANALYSING") {
           throw new WorkflowError(409, "Workflow is not analysing");
         }
         const saved = await saveAnalysisResult(tx, runId, result);
