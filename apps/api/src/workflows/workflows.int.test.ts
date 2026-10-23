@@ -196,6 +196,12 @@ describe("workflow HTTP review", () => {
     const w = await interrupted();
     await (await workflowResultStore(db, w.id)).save(w.runId as string, validAnalysis());
     const ready = await requestWorkflowReview(db, w.id, 2);
+    const rejectedWorkflow = await interrupted();
+    await (await workflowResultStore(db, rejectedWorkflow.id)).save(
+      rejectedWorkflow.runId as string,
+      validAnalysis(),
+    );
+    const rejectedReady = await requestWorkflowReview(db, rejectedWorkflow.id, 2);
     const app = await buildServer({
       db,
       config: { ...loadConfig(), api: { port: 0, logLevel: "silent" } },
@@ -216,7 +222,27 @@ describe("workflow HTTP review", () => {
         payload: { version: ready.version, reason: "Too late" },
       });
       expect(stale.statusCode).toBe(409);
-      expect((await app.inject(`/api/workflows/${w.id}`)).json().events).toHaveLength(5);
+      const acceptedDetail = await app.inject(`/api/workflows/${w.id}`);
+      expect(acceptedDetail.json().events).toHaveLength(5);
+      expect(acceptedDetail.json().events.at(-1)).toMatchObject({
+        from: "AWAITING_REVIEW",
+        to: "ACCEPTED",
+        reason: "Human decision: Evidence checked",
+      });
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: `/api/workflows/${rejectedWorkflow.id}/reject`,
+        payload: { version: rejectedReady.version, reason: "Needs more evidence" },
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(rejected.json().state).toBe("REJECTED");
+      const rejectedDetail = await app.inject(`/api/workflows/${rejectedWorkflow.id}`);
+      expect(rejectedDetail.json().events.at(-1)).toMatchObject({
+        from: "AWAITING_REVIEW",
+        to: "REJECTED",
+        reason: "Human decision: Needs more evidence",
+      });
     } finally {
       await app.close();
     }

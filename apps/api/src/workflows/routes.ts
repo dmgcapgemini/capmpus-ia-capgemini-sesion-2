@@ -37,6 +37,28 @@ export async function workflowRoutes(app: FastifyInstance, { service }: { servic
     { schema: { params, response: { 200: WorkflowDetail, ...errors } } },
     async (request) => workflowDetail(service.db, request.params.id),
   );
-  void ReviewWorkflowRequest;
-  void reviewWorkflow;
+  api.post(
+    "/workflows/:id/accept",
+    {
+      schema: {
+        params,
+        body: ReviewWorkflowRequest,
+        response: { 200: Workflow, ...errors },
+      },
+    },
+    async (request) =>
+      reviewWorkflow(service.db, request.params.id, request.body.version, "ACCEPTED", request.body.reason),
+  );
+  api.post(
+    "/workflows/:id/reject",
+    {
+      schema: {
+        params,
+        body: ReviewWorkflowRequest,
+        response: { 200: Workflow, ...errors },
+      },
+    },
+    async (request) =>
+      reviewWorkflow(service.db, request.params.id, request.body.version, "REJECTED", request.body.reason),
+  );
 }
